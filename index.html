@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Luftdruck & Herzrhythmus</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background: #f5f5f5;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 0.5rem;
+    }
+    label {
+      display: block;
+      margin-top: 0.5rem;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 0.5rem;
+      margin-top: 0.25rem;
+      box-sizing: border-box;
+      font-size: 1rem;
+    }
+    button {
+      margin-top: 0.75rem;
+    }
+    .result {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      background: #fff;
+    }
+    .pressure-high {
+      color: #0a7a0a;
+      font-weight: bold;
+    }
+    .pressure-low {
+      color: #c01818;
+      font-weight: bold;
+    }
+    .warning {
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      border-radius: 0.4rem;
+      background: #ffe4e4;
+      color: #a00000;
+      font-size: 0.9rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.4rem;
+      text-align: left;
+    }
+    th {
+      background: #eee;
+    }
+    .buttons-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .buttons-row button {
+      flex: 1;
+    }
+    #chartContainer {
+      margin-top: 1.5rem;
+      background: #fff;
+      padding: 1rem;
+      border-radius: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Luftdruck & Herzrhythmus</h1>
+
+  <label>
+    Stadt:
+    <input type="text" id="city" placeholder="z.B. Nürnberg">
+  </label>
+
+  <label>
+    Herzrhythmusstörungen:
+    <select id="hr">
+      <option value="nein">nein</option>
+      <option value="ja">ja</option>
+    </select>
+  </label>
+
+  <button id="measureBtn">Luftdruck abrufen & speichern</button>
+
+  <div class="buttons-row">
+    <button id="exportBtn">Daten als CSV exportieren</button>
+    <button id="clearBtn">Alle lokalen Daten löschen</button>
+  </div>
+
+  <div class="result" id="resultBox" style="display:none;"></div>
+
+  <h2>Gespeicherte Messungen</h2>
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th>Datum</th>
+        <th>Stadt</th>
+        <th>Luftdruck (hPa)</th>
+        <th>Hoch/Tief</th>
+        <th>Herzrhythmus</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="chartContainer">
+    <h2>Luftdruck-Diagramm</h2>
+    <canvas id="pressureChart"></canvas>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'luftdruck_messungen_v1';
+
+    function loadData() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }
+
+    function saveData(data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function addRowToTable(entry) {
+      const tbody = document.querySelector('#dataTable tbody');
+      const tr = document.createElement('tr');
+
+      tr.innerHTML = `
+        <td>${entry.date}</td>
+        <td>${entry.city}</td>
+        <td>${entry.pressure.toFixed(1)}</td>
+        <td>${entry.type}</td>
+        <td>${entry.hr}</td>
+      `;
+
+      tbody.appendChild(tr);
+    }
+
+    function renderTable() {
+      const data = loadData();
+      const tbody = document.querySelector('#dataTable tbody');
+      tbody.innerHTML = '';
+      data.forEach(addRowToTable);
+    }
+
+    async function getPressure(city) {
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de&format=json`;
+      const geoRes = await fetch(geoUrl);
+      const geoData = await geoRes.json();
+      if (!geoData.results || !geoData.results.length) throw new Error('Stadt nicht gefunden');
+
+      const { latitude, longitude } = geoData.results[0];
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=surface_pressure`;
+      const weatherRes = await fetch(weatherUrl);
+      const weatherData = await weatherRes.json();
+
+      return weatherData.current.surface_pressure;
+    }
+
+    function classifyPressure(p) {
+      return p >= 1013 ? 'Hochdruck' : 'Tiefdruck';
+    }
+
+    async function handleMeasure() {
+      const city = document.getElementById('city').value.trim();
+      const hr = document.getElementById('hr').value;
+      const resultBox = document.getElementById('resultBox');
+
+      if (!city) {
+        alert('Bitte eine Stadt eingeben.');
+        return;
+      }
+
+      resultBox.style.display = 'block';
+      resultBox.textContent = 'Lade Luftdruckdaten...';
+
+      try {
+        const pressure = await getPressure(city);
+        const type = classifyPressure(pressure);
+        const date = new Date().toLocaleString();
+
+        const entry = { date, city, pressure, type, hr };
+        const data = loadData();
+        data.push(entry);
+        saveData(data);
+
+        let warningHtml = '';
+        if (type === 'Tiefdruck') {
+          warningHtml = `
+            <div class="warning">
+              Tiefdruck erkannt. Wenn du dich unwohl fühlst, sprich mit einer Ärztin oder einem Arzt.
+            </div>
+          `;
+        }
+
+        resultBox.innerHTML = `
+          <strong>${city}</strong><br>
+          Luftdruck: <span class="${type === 'Hochdruck' ? 'pressure-high' : 'pressure-low'}">
+            ${pressure.toFixed(1)} hPa (${type})
+          </span><br>
+          Herzrhythmusstörungen: ${hr}<br>
+          Gespeichert am: ${date}
+          ${warningHtml}
+        `;
+
+        renderTable();
+        updateChart();
+      } catch (err) {
+        resultBox.textContent = 'Fehler: ' + err.message;
+      }
+    }
+
+    function exportCSV() {
+      const data = loadData();
+      if (!data.length) {
+        alert('Keine Daten vorhanden.');
+        return;
+      }
+
+      const header = ['Datum', 'Stadt', 'Luftdruck_hPa', 'Typ', 'Herzrhythmus'];
+      const rows = data.map(e => [
+        e.date,
+        e.city,
+        e.pressure.toString().replace('.', ','),
+        e.type,
+        e.hr
+      ]);
+
+      const csv = [header, ...rows].map(r => r.join(';')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'luftdruck_daten.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearData() {
+      if (!confirm('Alle Daten löschen?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      renderTable();
+      updateChart();
+      const resultBox = document.getElementById('resultBox');
+      resultBox.style.display = 'none';
+      resultBox.textContent = '';
+    }
+
+    // Diagramm
+    let chart = null;
+
+    function updateChart() {
+      const data = loadData();
+      const labels = data.map(e => e.date);
+      const values = data.map(e => e.pressure);
+      const colors = data.map(e => e.type === 'Hochdruck' ? '#0a7a0a' : '#c01818');
+
+      if (!labels.length) {
+        if (chart) {
+          chart.destroy();
+          chart = null;
+        }
+        return;
+      }
+
+      if (chart) chart.destroy();
+
+      const ctx = document.getElementById('pressureChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Luftdruck (hPa)',
+            data: values,
+            borderColor: '#555',
+            backgroundColor: 'rgba(0,0,0,0)',
+            pointBackgroundColor: colors,
+            pointBorderColor: colors,
+            pointRadius: 4,
+            tension: 0.2
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { display: true }
+          },
+          scales: {
+            x: { ticks: { maxRotation: 60, minRotation: 30 } }
+          }
+        }
+      });
+    }
+
+    document.getElementById('measureBtn').addEventListener('click', handleMeasure);
+    document.getElementById('exportBtn').addEventListener('click', exportCSV);
+    document.getElementById('clearBtn').addEventListener('click', clearData);
+
+    renderTable();
+    updateChart();
+  </script>
+</body>
+</html>
