@@ -5,7 +5,10 @@
   <title>Luftdruck & Herzrhythmus</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <!-- Manifest für App-Icon / PWA -->
   <link rel="manifest" href="manifest.json">
+
+  <!-- Chart.js für Diagramm -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
@@ -93,9 +96,19 @@
     <input type="text" id="city" placeholder="z.B. Nürnberg">
   </label>
 
+  <button id="geoBtn">Standort automatisch erkennen</button>
+
   <label>
     Herzrhythmusstörungen:
     <select id="hr">
+      <option value="nein">nein</option>
+      <option value="ja">ja</option>
+    </select>
+  </label>
+
+  <label>
+    Schwindelgefühl heute:
+    <select id="dizzy">
       <option value="nein">nein</option>
       <option value="ja">ja</option>
     </select>
@@ -119,6 +132,7 @@
         <th>Luftdruck (hPa)</th>
         <th>Hoch/Tief</th>
         <th>Herzrhythmus</th>
+        <th>Schwindel</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -151,6 +165,7 @@
         <td>${entry.pressure.toFixed(1)}</td>
         <td>${entry.type}</td>
         <td>${entry.hr}</td>
+        <td>${entry.dizzy}</td>
       `;
 
       tbody.appendChild(tr);
@@ -174,6 +189,10 @@
       const weatherRes = await fetch(weatherUrl);
       const weatherData = await weatherRes.json();
 
+      if (!weatherData.current || typeof weatherData.current.surface_pressure !== 'number') {
+        throw new Error('Kein Luftdruckwert gefunden');
+      }
+
       return weatherData.current.surface_pressure;
     }
 
@@ -184,10 +203,11 @@
     async function handleMeasure() {
       const city = document.getElementById('city').value.trim();
       const hr = document.getElementById('hr').value;
+      const dizzy = document.getElementById('dizzy').value;
       const resultBox = document.getElementById('resultBox');
 
       if (!city) {
-        alert('Bitte eine Stadt eingeben.');
+        alert('Bitte eine Stadt eingeben oder Standort erkennen.');
         return;
       }
 
@@ -199,7 +219,7 @@
         const type = classifyPressure(pressure);
         const date = new Date().toLocaleString();
 
-        const entry = { date, city, pressure, type, hr };
+        const entry = { date, city, pressure, type, hr, dizzy };
         const data = loadData();
         data.push(entry);
         saveData(data);
@@ -219,13 +239,14 @@
             ${pressure.toFixed(1)} hPa (${type})
           </span><br>
           Herzrhythmusstörungen: ${hr}<br>
+          Schwindelgefühl heute: ${dizzy}<br>
           Gespeichert am: ${date}
           ${warningHtml}
         `;
 
         renderTable();
         updateChart();
-      } catch (err) {
+    } catch (err) {
         resultBox.textContent = 'Fehler: ' + err.message;
       }
     }
@@ -237,13 +258,14 @@
         return;
       }
 
-      const header = ['Datum', 'Stadt', 'Luftdruck_hPa', 'Typ', 'Herzrhythmus'];
+      const header = ['Datum', 'Stadt', 'Luftdruck_hPa', 'Typ', 'Herzrhythmus', 'Schwindel'];
       const rows = data.map(e => [
         e.date,
         e.city,
         e.pressure.toString().replace('.', ','),
         e.type,
-        e.hr
+        e.hr,
+        e.dizzy
       ]);
 
       const csv = [header, ...rows].map(r => r.join(';')).join('\n');
@@ -312,6 +334,35 @@
         }
       });
     }
+
+    // Standort automatisch erkennen
+    document.getElementById('geoBtn').addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        alert("Standorterkennung wird nicht unterstützt.");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        try {
+          const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&language=de`;
+          const res = await fetch(url);
+          const data = await res.json();
+
+          if (data && data.results && data.results.length > 0) {
+            document.getElementById('city').value = data.results[0].name;
+          } else {
+            alert("Konnte den Ort nicht bestimmen.");
+          }
+        } catch (e) {
+          alert("Fehler bei der Standortabfrage.");
+        }
+      }, () => {
+        alert("Standortzugriff wurde verweigert.");
+      });
+    });
 
     document.getElementById('measureBtn').addEventListener('click', handleMeasure);
     document.getElementById('exportBtn').addEventListener('click', exportCSV);
