@@ -347,20 +347,53 @@
         const lon = pos.coords.longitude;
 
         try {
-          const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&language=de`;
-          const res = await fetch(url);
+          // OpenStreetMap Reverse Geocoding
+          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=de`;
+          const res = await fetch(url, {
+            headers: { "User-Agent": "Luftdruck-App" }
+          });
           const data = await res.json();
 
-          if (data && data.results && data.results.length > 0) {
-            document.getElementById('city').value = data.results[0].name;
+          if (data && data.address) {
+            const ort =
+              data.address.city ||
+              data.address.town ||
+              data.address.village ||
+              data.address.hamlet ||
+              data.address.municipality;
+
+            if (ort) {
+              document.getElementById('city').value = ort;
+            } else {
+              // Falls kein Ortsname → Koordinaten eintragen
+              document.getElementById('city').value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            }
           } else {
-            alert("Konnte den Ort nicht bestimmen.");
+            document.getElementById('city').value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
           }
+
         } catch (e) {
-          alert("Fehler bei der Standortabfrage.");
+          document.getElementById('city').value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
         }
-      }, () => {
-        alert("Standortzugriff wurde verweigert.");
+
+      }, err => {
+        switch (err.code) {
+          case 1:
+            alert("Standortzugriff verweigert.");
+            break;
+          case 2:
+            alert("Standort konnte nicht bestimmt werden.");
+            break;
+          case 3:
+            alert("Zeitüberschreitung bei der Standortabfrage.");
+            break;
+          default:
+            alert("Unbekannter Fehler bei der Standortabfrage.");
+        }
+      }, {
+        enableHighAccuracy: false,
+        timeout: 30000,
+        maximumAge: 0
       });
     });
 

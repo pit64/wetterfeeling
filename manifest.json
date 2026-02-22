@@ -7,7 +7,7 @@
   "theme_color": "#0a7a0a",
   "icons": [
     {
-      "src": "barometer_14023786.png",
+      "src": "icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
