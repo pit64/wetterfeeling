@@ -178,23 +178,32 @@
       data.forEach(addRowToTable);
     }
     async function getPressure(city) {
-      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de&format=json`;
-      const geoRes = await fetch(geoUrl);
-      const geoData = await geoRes.json();
-      if (!geoData.results || !geoData.results.length) throw new Error('Stadt nicht gefunden');
+      let latitude, longitude;
     
-      const { latitude, longitude } = geoData.results[0];
+      // Prüfen ob Koordinaten eingegeben wurden
+      if (city.includes(',')) {
+        const parts = city.split(',');
+        latitude = parseFloat(parts[0]);
+        longitude = parseFloat(parts[1]);
+      } else {
+        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de&format=json`;
+        const geoRes = await fetch(geoUrl);
+        const geoData = await geoRes.json();
+        if (!geoData.results || !geoData.results.length) throw new Error('Stadt nicht gefunden');
+        latitude = geoData.results[0].latitude;
+        longitude = geoData.results[0].longitude;
+      }
     
-      // WICHTIG: pressure_msl statt surface_pressure
-      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=pressure_msl`;
+      // pressure_msl aus hourly holen (zuverlässig!)
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=pressure_msl&forecast_days=1`;
       const weatherRes = await fetch(weatherUrl);
       const weatherData = await weatherRes.json();
     
-      if (!weatherData.current || typeof weatherData.current.pressure_msl !== 'number') {
+      if (!weatherData.hourly || !weatherData.hourly.pressure_msl) {
         throw new Error('Kein Luftdruckwert gefunden');
       }
     
-      return weatherData.current.pressure_msl;
+      return weatherData.hourly.pressure_msl[0];
     }
 
     function classifyPressure(p) {
