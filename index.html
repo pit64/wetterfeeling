@@ -191,7 +191,7 @@
       const weatherRes = await fetch(weatherUrl);
       const weatherData = await weatherRes.json();
 
-      if (!weatherData.current || typeof weatherData.current.surface_pressure !== 'number') {
+      if (!weatherData.current || typeof weatherData.current.pressure_msl !== 'number') {
         throw new Error('Kein Luftdruckwert gefunden');
       }
       return weatherData.current.pressure_msl;
