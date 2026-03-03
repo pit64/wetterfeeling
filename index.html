@@ -177,26 +177,24 @@
       tbody.innerHTML = '';
       data.forEach(addRowToTable);
     }
-
     async function getPressure(city) {
       const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de&format=json`;
       const geoRes = await fetch(geoUrl);
       const geoData = await geoRes.json();
       if (!geoData.results || !geoData.results.length) throw new Error('Stadt nicht gefunden');
-
+    
       const { latitude, longitude } = geoData.results[0];
+    
+      // WICHTIG: pressure_msl statt surface_pressure
       const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=pressure_msl`;
-
-      //const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=surface_pressure`;
       const weatherRes = await fetch(weatherUrl);
       const weatherData = await weatherRes.json();
-
+    
       if (!weatherData.current || typeof weatherData.current.pressure_msl !== 'number') {
         throw new Error('Kein Luftdruckwert gefunden');
       }
+    
       return weatherData.current.pressure_msl;
-
-      //eturn weatherData.current.surface_pressure;
     }
 
     function classifyPressure(p) {
